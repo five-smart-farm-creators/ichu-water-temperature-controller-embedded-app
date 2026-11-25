@@ -46,3 +46,27 @@ The load label is **Heater indicator — simulation**. It is supplied only throu
 The requested behavior is HIGH closes COM-NO and lights the load; LOW opens COM-NO and extinguishes it. The circuit initially uses `transistor="npn"` as authorized. The [Wokwi relay reference](https://docs.wokwi.com/parts/wokwi-relay-module) contradicts itself between the attribute table and operation text. This configuration has **not yet been verified in a running simulation**. The firmware polarity has not been inverted to hide that discrepancy.
 
 `tests/hysteresis-relay.test.yaml` asserts GPIO26, COM, NO and the actual LED load pins. A GPIO or serial assertion alone is insufficient. The load-side assertions and visual LED observation must pass before claiming correct relay behavior. If they fail, investigate the supported `transistor` configuration, record the evidence and preserve the requested HIGH/LOW behavior. A floating output or unsupported pin assertion must not be counted as a pass. Native tests do not establish contact polarity or LED current.
+
+## Demonstration control rules
+
+Change the `constexpr` settings in `WaterControllerConfig.h`, then rebuild the firmware. These values are the authorized demonstration profile:
+
+| Setting | Value |
+| --- | --- |
+| Heating ON | Valid temperature <= 18.0 C |
+| Heating OFF | Valid temperature >= 20.0 C |
+| Between 18 and 20 C | Preserve the previous state |
+| Startup and fault recovery | Three consecutive valid readings, with output OFF until the third |
+| Conversion start interval | 1000 ms; first conversion starts as soon as initialization permits |
+| DS18B20 resolution / conversion wait | 12 bits / at least 750 ms after the driver's STARTCONVO timestamp |
+| Stale reading | More than 3000 ms without a completed valid reading forces OFF and restarts qualification |
+| Overtemperature lock | Any valid temperature >= 30.0 C forces OFF, including during qualification |
+| Automatic rearm | Three consecutive valid readings <= 25.0 C |
+
+An invalid reading resets both counters, forces OFF and preserves an existing overtemperature lock. A reading above 25 C resets the rearm counter. Staleness also interrupts rearm. On recovery or rearm, normal regulation starts from OFF and uses the current reading: 19 C remains OFF; 18 C can enable heating after qualification. At 25 C, rearm remains OFF. A restart initializes OFF and requires three new valid readings.
+
+The driver checks one DS18B20 address, external power, resolution, conversion completion, bus presence, scratchpad CRC, finite values and the **sensor's** -55 to 125 C range. It does not apply the collar's body-temperature range. Numeric error sentinels are not accepted as usable temperatures. A completed, CRC-valid reading of 85 C is accepted as temperature and enters the overtemperature lock.
+
+Conversions do not block `loop()`. Before a result is available, `poll()` returns no new reading; cached temperatures cannot increment qualification. Errors trigger rediscovery on a later scheduled attempt. The adapter avoids DallasTemperature 4.0.6 `begin()` (which retries with `delay()`) and uses direct OneWire discovery. Scratchpad autosave is disabled to avoid the driver's EEPROM-write wait. Bus transactions themselves are synchronous and short; the 750 ms conversion wait uses elapsed time.
+
+This software lock and shutdown behavior are simulation features, not an independent physical safety mechanism. The report does not define sensor-failure handling; this version implements the behavior explicitly authorized for the demonstration.
