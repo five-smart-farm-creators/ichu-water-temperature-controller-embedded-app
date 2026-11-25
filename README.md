@@ -127,3 +127,24 @@ try {
 ```
 
 The tests exercise startup, inclusive hysteresis, both recovery outcomes, interrupted qualification, driver/CRC/conversion/configuration errors, NaN/infinities, sensor-range endpoints, stale data, `millis()` wraparound, 30/25 C locking and rearm, valid 85 C, and restart through simulated sensor and actuator interfaces. They test this controller, not the panel or collar firmware. They do not verify electrical behavior or the actual DS18B20 bus implementation.
+
+## Open and operate Wokwi
+
+1. Compile the firmware, then open this repository in VS Code with Wokwi installed and licensed.
+2. Run **Wokwi: Start Simulator**. Open the serial monitor at 115200 baud.
+3. Observe three qualifying readings at the initial 22 C, all with heating OFF.
+4. Change the sensor slider to 18, 19, 20, 19 and 18 C. Check serial state, GPIO26, COM-NO and the red LED together.
+5. Try 30 C, then 26 C, then three readings at 25 C. Try 85 C as a valid overtemperature input.
+6. Stop and restart at 19 C: output starts OFF and three new readings are required. Changing the initial value in `diagram.json` is another way to test cold boot at a selected temperature.
+
+The temperature slider is manual; turning on the LED does not heat the simulated sensor. The built-in DS18B20 documentation does not expose a disconnect/CRC-error control. Those fault paths, stale behavior and interrupted recovery are covered with native interface doubles; their live sensor-bus coverage remains outstanding. No undocumented simulator controls are used.
+
+For automated simulation, configure `WOKWI_CLI_TOKEN` from your Wokwi account in the process environment. Never store it in this repository or print it. From the repository root, after loading the tool paths:
+
+```powershell
+if ([string]::IsNullOrWhiteSpace($env:WOKWI_CLI_TOKEN)) { throw 'WOKWI_CLI_TOKEN is required' }
+foreach ($scenario in @('tests/startup.test.yaml', 'tests/hysteresis-relay.test.yaml', 'tests/overtemperature.test.yaml')) {
+    & $ichuWokwi . --scenario $scenario --timeout 120000
+    if ($LASTEXITCODE -ne 0) { throw "Wokwi failed: $scenario" }
+}
+```
