@@ -70,3 +70,60 @@ The driver checks one DS18B20 address, external power, resolution, conversion co
 Conversions do not block `loop()`. Before a result is available, `poll()` returns no new reading; cached temperatures cannot increment qualification. Errors trigger rediscovery on a later scheduled attempt. The adapter avoids DallasTemperature 4.0.6 `begin()` (which retries with `delay()`) and uses direct OneWire discovery. Scratchpad autosave is disabled to avoid the driver's EEPROM-write wait. Bus transactions themselves are synchronous and short; the 750 ms conversion wait uses elapsed time.
 
 This software lock and shutdown behavior are simulation features, not an independent physical safety mechanism. The report does not define sensor-failure handling; this version implements the behavior explicitly authorized for the demonstration.
+
+## Toolchain and build
+
+Verified versions: Arduino CLI **1.6.0**, ESP32 Arduino core **3.3.4**, OneWire **2.3.8**, DallasTemperature **4.0.6**, native GCC **15.2.0** and Wokwi CLI **0.29.1**. Only the two sensor libraries are required by this application; their versions are pinned in `libraries.txt`.
+
+On this workspace, reuse the existing task tool paths in each PowerShell process:
+
+```powershell
+$ErrorActionPreference = 'Stop'
+. 'C:\Users\HPSUPP~1\AppData\Local\Temp\ichu-water-toolchain-8ee02f24e70940569d44eeab4565fe60\tool-paths.ps1'
+& $ichuArduino --config-file $ichuArduinoConfig core list
+& $ichuArduino --config-file $ichuArduinoConfig lib list
+```
+
+The paths file points to an isolated temporary Arduino configuration. The installed packages were copied to a shorter temporary path after GCC failed to find an existing `bits/c++config.h` through its expanded Windows search path. No tool was downloaded again and no permanent PATH change was made. If temporary files are removed, prepare an equivalent isolated toolchain before building.
+
+From this repository root, compile a fresh temporary `sketch` directory. Only root implementation files are copied; tests with `main()` are excluded:
+
+```powershell
+$repo = (Get-Location).Path
+$compileRoot = Join-Path ([IO.Path]::GetTempPath()) ('ichu-water-build-' + [Guid]::NewGuid().ToString('N'))
+$sketchDir = Join-Path $compileRoot 'sketch'
+New-Item -ItemType Directory -Path $sketchDir | Out-Null
+Get-ChildItem -LiteralPath $repo -File |
+    Where-Object { $_.Extension -in @('.ino', '.h', '.cpp') } |
+    Copy-Item -Destination $sketchDir
+& $ichuArduino --config-file $ichuArduinoConfig compile `
+    --fqbn esp32:esp32:esp32 --warnings all `
+    --output-dir (Join-Path $repo 'build') $sketchDir
+if ($LASTEXITCODE -ne 0) { throw 'ESP32 compilation failed' }
+Get-ChildItem -LiteralPath (Join-Path $repo 'build') -File
+```
+
+`wokwi.toml` selects `build/sketch.ino.bin` and `build/sketch.ino.elf`. No filesystem partition is used. The collar's `sketch.ino.flash.bin` is a separate workflow-generated image including its LittleFS partition table; that transformation is not copied into this application.
+
+## Native controller tests
+
+From the repository root in PowerShell, using the CLion compiler only for the native test:
+
+```powershell
+$repo = (Get-Location).Path
+$compilerBin = 'C:\Users\HP SUPPORT\AppData\Local\Programs\CLion\bin\mingw\bin'
+$testDir = Join-Path ([IO.Path]::GetTempPath()) ('ichu-water-test-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $testDir | Out-Null
+$testExe = Join-Path $testDir 'temperature_control_test.exe'
+$savedTaskPath = $env:PATH
+try {
+    $env:PATH = $compilerBin + ';' + $savedTaskPath
+    & (Join-Path $compilerBin 'g++.exe') -std=c++17 -Wall -Wextra -Werror -pedantic `
+        -I $repo tests/temperature_control_test.cpp TemperatureRegulator.cpp WaterController.cpp -o $testExe
+    if ($LASTEXITCODE -ne 0) { throw 'Native compilation failed' }
+    & $testExe
+    if ($LASTEXITCODE -ne 0) { throw 'Native controller tests failed' }
+} finally { $env:PATH = $savedTaskPath }
+```
+
+The tests exercise startup, inclusive hysteresis, both recovery outcomes, interrupted qualification, driver/CRC/conversion/configuration errors, NaN/infinities, sensor-range endpoints, stale data, `millis()` wraparound, 30/25 C locking and rearm, valid 85 C, and restart through simulated sensor and actuator interfaces. They test this controller, not the panel or collar firmware. They do not verify electrical behavior or the actual DS18B20 bus implementation.
