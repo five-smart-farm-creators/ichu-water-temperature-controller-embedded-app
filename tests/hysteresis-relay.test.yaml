@@ -1,0 +1,35 @@
+# Check the switched load as well as GPIO26. A relay polarity mismatch must fail this scenario.
+name: Water controller hysteresis and relay contacts
+version: 1
+author: SmartFarm
+steps:
+  - wait-serial: 'temp=22.00C heater=OFF state=READY'
+  - expect-pin: { part-id: esp, name: 26, value: 0 }
+  - expect-pin: { part-id: relay, name: COM, value: 1 }
+  - expect-pin: { part-id: relay, name: NO, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }
+  - set-control: { part-id: temp, name: temperature, value: 18 }
+  - wait-serial: 'temp=18.00C heater=ON state=READY'
+  - delay: 100ms
+  - expect-pin: { part-id: esp, name: 26, value: 1 }
+  - expect-pin: { part-id: relay, name: NO, value: 1 }
+  - expect-pin: { part-id: loadResistor, name: 1, value: 1 }
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 1 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }
+  - set-control: { part-id: temp, name: temperature, value: 19 }
+  - wait-serial: 'temp=19.00C heater=ON state=READY'
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 1 }
+  - set-control: { part-id: temp, name: temperature, value: 20 }
+  - wait-serial: 'temp=20.00C heater=OFF state=READY'
+  - delay: 100ms
+  - expect-pin: { part-id: esp, name: 26, value: 0 }
+  - expect-pin: { part-id: relay, name: NO, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - set-control: { part-id: temp, name: temperature, value: 19 }
+  - wait-serial: 'temp=19.00C heater=OFF state=READY'
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - set-control: { part-id: temp, name: temperature, value: 18 }
+  - wait-serial: 'temp=18.00C heater=ON state=READY'
+  - expect-pin: { part-id: relay, name: NO, value: 1 }
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 1 }
