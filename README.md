@@ -24,3 +24,25 @@ Sources stay at the root, as in the collar and alert-panel repositories:
 | `tests/` | Native controller tests and Wokwi automation scenarios |
 
 The reference firmwares use Modest IoT Nano Framework. This local-only version uses a small `millis()` scheduler instead of its `Device` sampler/network engine, so no network task is introduced. Hardware drivers and regulation remain separate, without a dependency on a future cloud adapter.
+
+## Simulation wiring
+
+| Component pin or connection | Destination |
+| --- | --- |
+| ESP32 board | `board-esp32-devkit-c-v4`; FQBN `esp32:esp32:esp32` |
+| DS18B20 DQ | GPIO4 |
+| DS18B20 VCC / GND | 3V3 / common GND; three-wire supply, no parasite power |
+| 4.7 kohm pull-up | GPIO4/DQ to 3V3 |
+| Relay IN / VCC / GND | GPIO26 / simulated board 5V / common GND |
+| Relay COM | Simulated board 5V |
+| Relay NO | 330 ohm resistor, then red LED anode A |
+| Red LED cathode C | Common GND |
+| Relay NC | Unconnected |
+
+The load label is **Heater indicator — simulation**. It is supplied only through the relay contacts; no second GPIO drives it. Sensor, ESP32 and relay/load are arranged from left to right. The initial simulated temperature is 22 C. No mains load is represented.
+
+### Relay verification is outstanding
+
+The requested behavior is HIGH closes COM-NO and lights the load; LOW opens COM-NO and extinguishes it. The circuit initially uses `transistor="npn"` as authorized. The [Wokwi relay reference](https://docs.wokwi.com/parts/wokwi-relay-module) contradicts itself between the attribute table and operation text. This configuration has **not yet been verified in a running simulation**. The firmware polarity has not been inverted to hide that discrepancy.
+
+`tests/hysteresis-relay.test.yaml` asserts GPIO26, COM, NO and the actual LED load pins. A GPIO or serial assertion alone is insufficient. The load-side assertions and visual LED observation must pass before claiming correct relay behavior. If they fail, investigate the supported `transistor` configuration, record the evidence and preserve the requested HIGH/LOW behavior. A floating output or unsupported pin assertion must not be counted as a pass. Native tests do not establish contact polarity or LED current.
