@@ -56,6 +56,18 @@ jobs:
             arduino-cli --config-file "$config" lib install "$library"
           done < libraries.txt
 
+      - name: Test sensor timing with the pinned DallasTemperature implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          dallas="$RUNNER_TEMP/ichu-arduino/user/libraries/DallasTemperature"
+          mkdir -p build
+          g++ -std=c++17 -DARDUINO=10819 -Wall -Wextra -Werror -pedantic \
+            -I tests/sensor_support -I "$dallas" -I . \
+            tests/temperature_sensor_test.cpp TemperatureSensor.cpp "$dallas/DallasTemperature.cpp" \
+            -o build/temperature_sensor_test
+          build/temperature_sensor_test
+
       - name: Compile the ESP32 firmware
         shell: bash
         run: |
