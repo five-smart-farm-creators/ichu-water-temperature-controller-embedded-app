@@ -143,8 +143,14 @@ For automated simulation, configure `WOKWI_CLI_TOKEN` from your Wokwi account in
 
 ```powershell
 if ([string]::IsNullOrWhiteSpace($env:WOKWI_CLI_TOKEN)) { throw 'WOKWI_CLI_TOKEN is required' }
-foreach ($scenario in @('tests/startup.test.yaml', 'tests/hysteresis-relay.test.yaml', 'tests/overtemperature.test.yaml')) {
-    & $ichuWokwi . --scenario $scenario --timeout 120000
+$scenarios = @('tests/startup.test.yaml', 'tests/startup-heating.test.yaml',
+               'tests/hysteresis-relay.test.yaml', 'tests/overtemperature.test.yaml')
+foreach ($scenario in $scenarios) {
+    $name = [IO.Path]::GetFileNameWithoutExtension($scenario)
+    & $ichuWokwi . --scenario $scenario --timeout 120000 --timeout-exit-code 1 `
+        --serial-log-file (Join-Path 'build' ($name + '.serial.log'))
     if ($LASTEXITCODE -ne 0) { throw "Wokwi failed: $scenario" }
 }
 ```
+
+`startup.test.yaml` checks qualification at the default 22 C. `startup-heating.test.yaml` changes the sensor to 18 C at the beginning of the scenario and checks that the first two readings keep both the output and load OFF, and the third enables them. The other scenarios cover inclusive hysteresis, the switched load, overtemperature and interrupted rearm. Each invocation starts a new simulation. A timeout is explicitly a failure, and each serial log is saved under the ignored `build/` directory.
