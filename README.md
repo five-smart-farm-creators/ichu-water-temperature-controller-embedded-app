@@ -82,6 +82,12 @@ This software lock and shutdown behavior are simulation features, not an indepen
 
 Verified versions: Arduino CLI **1.6.0**, ESP32 Arduino core **3.3.4**, OneWire **2.3.8**, DallasTemperature **4.0.6**, native GCC **15.2.0** and Wokwi CLI **0.29.1**. Only the two sensor libraries are required by this application; their versions are pinned in `libraries.txt`.
 
+On Windows, open this repository root in VS Code and press **Ctrl+Shift+B** to run the default **build esp32 firmware** task. You can also run `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. The script copies only root firmware sources into a temporary `sketch` folder, compiles for `esp32:esp32:esp32`, checks fresh non-empty `.bin` and `.elf` files, and copies the generated artifacts into this repository's `build/` directory. It resolves the repository from the script location, independently of the terminal's working directory.
+
+The script uses Arduino CLI on PATH by default. For an isolated installation, pass `-ArduinoCli <executable>` and `-ConfigFile <arduino-cli.yaml>`, or save those absolute paths as the `ArduinoCli` and `ConfigFile` properties in ignored `build/arduino-local.json` so the VS Code task can reuse them. This workspace's local file is configured for the existing isolated toolchain. If that temporary toolchain is removed, install Arduino CLI, the core and pinned libraries again and update or remove the local file.
+
+After a successful build, `Test-Path .\build\sketch.ino.bin` and `Test-Path .\build\sketch.ino.elf` must both return `True`. Start **Wokwi: Start Simulator** after building. Wokwi loads the firmware; it does not compile it, as described in the [official project configuration guide](https://docs.wokwi.com/vscode/project-config).
+
 On this workspace, reuse the existing task tool paths in each PowerShell process:
 
 ```powershell
@@ -149,7 +155,7 @@ The tests exercise startup, inclusive hysteresis, both recovery outcomes, interr
 
 ## Open and operate Wokwi
 
-1. Compile the firmware, then open this repository in VS Code with Wokwi installed and licensed.
+1. Open this repository root in VS Code with Wokwi installed and licensed, then press **Ctrl+Shift+B** to compile the firmware on Windows.
 2. Run **Wokwi: Start Simulator**. Open the serial monitor at 115200 baud.
 3. Observe three qualifying readings at the initial 22 C, all with heating OFF.
 4. Change the sensor slider to 18, 19, 20, 19 and 18 C. Check serial state, GPIO26, COM-NO and the red LED together.
@@ -201,6 +207,14 @@ The actual device-to-cloud transport, support for actuator events, persistent bu
 The four Wokwi scenarios run only when the repository secret `WOKWI_CLI_TOKEN` is available. Otherwise the job records that simulation was not executed. The runner uses Wokwi CLI 0.29.1; its Linux static x64 SHA256 was obtained from the [official release metadata](https://api.github.com/repos/wokwi/wokwi-cli/releases/tags/v0.29.1). This differs from the Windows executable's hash. The workflow has been prepared here; it has not been executed on GitHub as part of local verification.
 
 ## Verification results
+
+### Current build and simulation checks (2026-11-26)
+
+The Windows build task completed with exit 0 and generated non-empty `build/sketch.ino.bin` and `build/sketch.ino.elf` from the root firmware sources. Program storage is 288835 bytes and global RAM is 20920 bytes. The four compiler warnings originate in OneWire and its ESP32 GPIO macros, with none in this project's sources. Both native suites passed again: 337 controller checks and 48 sensor-driver checks, with zero failures.
+
+All four scenarios passed against Wokwi Simulation API `1.0.0-20261126-gccaad6a5`: startup, startup heating qualification, hysteresis/relay contacts, and overtemperature/rearm. The startup load check and the remaining ON/OFF transition checks now wait 100 simulated ms before reading the switched load, matching the existing settling waits. The initial GPIO26 LOW assertion remains immediate. Earlier runs without these waits failed before the contact/load levels had settled. Logs and exit codes are under ignored `build/pre-push/`; the earlier diagnostic records below describe their respective runs.
+
+These results confirm the current virtual circuit and scenario assertions. They do not establish optical brightness, physical hardware behavior, fault injection on the live sensor bus, or the cause of the operator's original sensor failure. The GitHub workflow has not been run as part of this local verification.
 
 ### Earlier sensor timing investigation (2026-11-26)
 
