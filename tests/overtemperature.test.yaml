@@ -3,26 +3,46 @@ version: 1
 author: SmartFarm
 steps:
   - wait-serial: 'temp=22.00C heater=OFF state=READY'
+  - expect-pin: { part-id: relay, name: IN, value: 0 }
+  - expect-pin: { part-id: relay, name: COM, value: 1 }
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }
   - set-control: { part-id: temp, name: temperature, value: 18 }
   - wait-serial: 'temp=18.00C heater=ON state=READY'
+  - delay: 100ms
+  - expect-pin: { part-id: esp, name: 26, value: 1 }
+  - expect-pin: { part-id: relay, name: IN, value: 1 }
+  - expect-pin: { part-id: relay, name: NO, value: 1 }
   - expect-pin: { part-id: heaterIndicator, name: A, value: 1 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }
   - set-control: { part-id: temp, name: temperature, value: 30 }
   - wait-serial: 'temp=30.00C heater=OFF state=OVERTEMPERATURE'
+  - delay: 100ms
   - expect-pin: { part-id: esp, name: 26, value: 0 }
+  - expect-pin: { part-id: relay, name: IN, value: 0 }
   - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }
   - set-control: { part-id: temp, name: temperature, value: 26 }
   - wait-serial: 'rearm=0/3 locked=1 error=none'
   - wait-serial: 'temp=26.00C heater=OFF state=OVERTEMPERATURE'
   - set-control: { part-id: temp, name: temperature, value: 25 }
   - wait-serial: 'rearm=1/3 locked=1 error=none'
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
   - wait-serial: 'rearm=2/3 locked=1 error=none'
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
   - set-control: { part-id: temp, name: temperature, value: 26 }
   - wait-serial: 'temp=26.00C heater=OFF state=OVERTEMPERATURE valid=3/3 rearm=0/3'
   - set-control: { part-id: temp, name: temperature, value: 25 }
   - wait-serial: 'rearm=1/3 locked=1 error=none'
-  - wait-serial: 'rearm=2/3 locked=1 error=none'
-  - wait-serial: 'temp=25.00C heater=OFF state=READY'
   - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - wait-serial: 'rearm=2/3 locked=1 error=none'
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - wait-serial: 'temp=25.00C heater=OFF state=READY'
+  - expect-pin: { part-id: relay, name: IN, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }
   - set-control: { part-id: temp, name: temperature, value: 85 }
   - wait-serial: 'temp=85.00C heater=OFF state=OVERTEMPERATURE'
+  - expect-pin: { part-id: relay, name: IN, value: 0 }
   - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }
