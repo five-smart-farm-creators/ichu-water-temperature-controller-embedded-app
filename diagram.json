@@ -8,8 +8,9 @@
     { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
     { "type": "wokwi-relay-module", "id": "relay", "top": 20, "left": 230, "attrs": { "transistor": "npn" } },
     { "type": "wokwi-resistor", "id": "loadResistor", "top": 10, "left": 420, "attrs": { "value": "330" } },
+    { "type": "wokwi-resistor", "id": "loadReference", "top": 125, "left": 450, "attrs": { "value": "10000" } },
     { "type": "wokwi-led", "id": "heaterIndicator", "top": 70, "left": 490, "attrs": { "color": "red", "label": "Heater indicator — simulation" } },
-    { "type": "wokwi-text", "id": "note", "top": -130, "left": 180, "attrs": { "text": "Local demonstration only. No thermal model.\nRelay COM-NO polarity still requires simulation verification." } }
+    { "type": "wokwi-text", "id": "note", "top": -130, "left": 180, "attrs": { "text": "Local demonstration only. No thermal model.\nLOW = heater indicator off; HIGH = on." } }
   ],
   "connections": [
     [ "esp:TX", "$serialMonitor:RX", "", [] ],
@@ -25,7 +26,9 @@
     [ "relay:COM", "esp:5V", "red", [] ],
     [ "relay:NO", "loadResistor:1", "orange", [] ],
     [ "loadResistor:2", "heaterIndicator:A", "orange", [] ],
-    [ "heaterIndicator:C", "esp:GND.1", "black", [] ]
+    [ "heaterIndicator:C", "esp:GND.1", "black", [] ],
+    [ "loadReference:1", "heaterIndicator:A", "black", [] ],
+    [ "loadReference:2", "esp:GND.1", "black", [] ]
   ],
   "dependencies": {}
 }
