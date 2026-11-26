@@ -17,6 +17,7 @@
 
 ### Fixed
 
+- Select Bash on macOS/Linux and PowerShell only on Windows for the default VS Code build task. Add a Bash firmware build script, preserve LF line endings and document per-machine Arduino CLI setup so a fresh checkout can generate Wokwi's firmware locally.
 - Prevent a truncated millisecond timestamp from rejecting a 12-bit conversion before 750 ms have actually elapsed. Use a microsecond deadline while preserving the 1000 ms request schedule, millisecond stale guard, completion bit, presence, CRC, resolution and range validation.
 - Give the simulated LED anode a defined OFF reference through a 10 kohm pull-down. Check the load rather than assuming an open relay NO contact reads LOW, and wait 100 simulated ms for switching to settle before checking the affected load transitions.
 - Separate the earlier token-blocked sensor investigation from the later successful simulation checks. Fresh ESP32 compilation, 337 controller checks, 48 sensor-driver checks and all four Wokwi scenarios pass; the original reported sensor failure's cause is not established by those results.
