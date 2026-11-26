@@ -82,11 +82,32 @@ This software lock and shutdown behavior are simulation features, not an indepen
 
 Verified versions: Arduino CLI **1.6.0**, ESP32 Arduino core **3.3.4**, OneWire **2.3.8**, DallasTemperature **4.0.6**, native GCC **15.2.0** and Wokwi CLI **0.29.1**. Only the two sensor libraries are required by this application; their versions are pinned in `libraries.txt`.
 
-On Windows, open this repository root in VS Code and press **Ctrl+Shift+B** to run the default **build esp32 firmware** task. You can also run `powershell -ExecutionPolicy Bypass -File .\build.ps1` from the repository root. The script copies only root firmware sources into a temporary `sketch` folder, compiles for `esp32:esp32:esp32`, checks fresh non-empty `.bin` and `.elf` files, and copies the generated artifacts into this repository's `build/` directory. It resolves the repository from the script location, independently of the terminal's working directory.
+Open this repository root in VS Code and select **Terminal > Run Build Task > build esp32 firmware**. The default shortcut is **Cmd+Shift+B** on macOS or **Ctrl+Shift+B** on Windows/Linux. The task runs `build.sh` with `/bin/bash` on macOS/Linux and `build.ps1` with `powershell.exe` on Windows; PowerShell is not required on macOS. These platform overrides follow the [VS Code task configuration](https://code.visualstudio.com/docs/debugtest/tasks#_operating-system-specific-properties).
 
-The script uses Arduino CLI on PATH by default. For an isolated installation, pass `-ArduinoCli <executable>` and `-ConfigFile <arduino-cli.yaml>`, or save those absolute paths as the `ArduinoCli` and `ConfigFile` properties in ignored `build/arduino-local.json` so the VS Code task can reuse them. This workspace's local file is configured for the existing isolated toolchain. If that temporary toolchain is removed, install Arduino CLI, the core and pinned libraries again and update or remove the local file.
+Both scripts copy only root firmware sources into a temporary `sketch` folder, compile for `esp32:esp32:esp32`, check fresh non-empty `.bin` and `.elf` files, and copy the generated artifacts into this repository's `build/` directory. They resolve the repository from the script location, independently of the terminal's working directory. Git ignores `build/`: pulling the repository downloads the build scripts, so compile locally before starting Wokwi.
 
-After a successful build, `Test-Path .\build\sketch.ino.bin` and `Test-Path .\build\sketch.ino.elf` must both return `True`. Start **Wokwi: Start Simulator** after building. Wokwi loads the firmware; it does not compile it, as described in the [official project configuration guide](https://docs.wokwi.com/vscode/project-config).
+### macOS and Linux
+
+Install Arduino CLI using the [official installation instructions](https://arduino.github.io/arduino-cli/1.6/installation/). On a Mac that already has Homebrew, run `brew install arduino-cli`. The shell script also checks `/opt/homebrew/bin` and `/usr/local/bin` when Arduino CLI is absent from VS Code's PATH.
+
+Install this project's pinned core and libraries once on that machine, then compile from the repository root:
+
+```bash
+arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli core install esp32:esp32@3.3.4 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+arduino-cli lib update-index
+arduino-cli lib install OneWire@2.3.8 DallasTemperature@4.0.6
+bash ./build.sh
+test -s build/sketch.ino.bin && test -s build/sketch.ino.elf && echo 'Firmware ready'
+```
+
+For an isolated installation, run `bash ./build.sh --arduino-cli <executable> --config-file <arduino-cli.yaml>`, or set `ARDUINO_CLI` and `ARDUINO_CLI_CONFIG_FILE` before launching VS Code. The config path may be absolute or relative to the repository. The shell script uses Bash 3.2-compatible syntax and does not require an executable permission on `build.sh` because the task explicitly invokes Bash.
+
+### Windows
+
+Run the default task or `powershell -ExecutionPolicy Bypass -File .\build.ps1`. The script uses Arduino CLI on PATH by default. For an isolated installation, pass `-ArduinoCli <executable>` and `-ConfigFile <arduino-cli.yaml>`, or save those absolute paths as the `ArduinoCli` and `ConfigFile` properties in ignored `build/arduino-local.json` so the Windows task can reuse them. This workspace's local file is configured for the existing isolated toolchain. If that temporary toolchain is removed, install Arduino CLI, the core and pinned libraries again and update or remove the local file.
+
+After a successful Windows build, `Test-Path .\build\sketch.ino.bin` and `Test-Path .\build\sketch.ino.elf` must both return `True`. On any supported platform, start **Wokwi: Start Simulator** after building. Wokwi loads the firmware; it does not compile it, as described in the [official project configuration guide](https://docs.wokwi.com/vscode/project-config).
 
 On this workspace, reuse the existing task tool paths in each PowerShell process:
 
@@ -155,7 +176,7 @@ The tests exercise startup, inclusive hysteresis, both recovery outcomes, interr
 
 ## Open and operate Wokwi
 
-1. Open this repository root in VS Code with Wokwi installed and licensed, then press **Ctrl+Shift+B** to compile the firmware on Windows.
+1. Open this repository root in VS Code with Wokwi installed and licensed, then select **Terminal > Run Build Task > build esp32 firmware** to compile locally.
 2. Run **Wokwi: Start Simulator**. Open the serial monitor at 115200 baud.
 3. Observe three qualifying readings at the initial 22 C, all with heating OFF.
 4. Change the sensor slider to 18, 19, 20, 19 and 18 C. Check serial state, GPIO26, COM-NO and the red LED together.
