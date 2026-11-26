@@ -21,6 +21,7 @@ private:
     DeviceAddress address_ = {};
     uint32_t lastStartMs_ = 0;
     uint32_t conversionStartMs_ = 0;
+    uint32_t conversionStartUs_ = 0;
     bool configured_ = false;
     bool converting_ = false;
 };

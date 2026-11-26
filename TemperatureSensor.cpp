@@ -71,7 +71,10 @@ TemperatureReading TemperatureSensor::finishConversion() {
 bool TemperatureSensor::poll(uint32_t nowMs, TemperatureReading& reading) {
     if (converting_) {
         const uint32_t elapsed = nowMs - conversionStartMs_;
-        if (elapsed < Config::kConversionTimeMs) {
+        // millis() truncates fractions: a 750 ms difference can still be less than 750 ms.
+        // Keep the coarse clock for stale detection, including pauses longer than micros() wraps.
+        if (elapsed <= Config::kStaleAfterMs &&
+            static_cast<uint32_t>(micros() - conversionStartUs_) < Config::kConversionTimeMs * 1000U) {
             return false;
         }
         converting_ = false;
@@ -101,7 +104,8 @@ bool TemperatureSensor::poll(uint32_t nowMs, TemperatureReading& reading) {
         reading = {0.0f, SensorError::Disconnected};
         return true;
     }
-    // The driver's timestamp follows STARTCONVO, so the 750 ms wait cannot end early.
+    // Start the precise wait after STARTCONVO has returned; retain the driver's ms sampling cadence.
+    conversionStartUs_ = micros();
     conversionStartMs_ = request.timestamp;
     lastStartMs_ = request.timestamp;
     converting_ = true;
