@@ -10,3 +10,4 @@
 - Pinned sensor dependencies, simulation wiring and reproducible build/test instructions. Network integration and persistent buffering are explicitly deferred.
 - A Wokwi scenario that requests heating at startup and checks the switched load remains off until the third valid reading.
 - A firmware-check workflow with pinned Arduino/core/library versions, native tests and token-gated Wokwi scenarios using a verified CLI release hash.
+- Reference-code findings and separate records for native tests, ESP32 compilation, limited diagram lint and simulation coverage awaiting a Wokwi token.
