@@ -37,15 +37,20 @@ The reference firmwares use Modest IoT Nano Framework. This local-only version u
 | Relay COM | Simulated board 5V |
 | Relay NO | 330 ohm resistor, then red LED anode A |
 | Red LED cathode C | Common GND |
+| LED anode reference | Additional 10 kohm resistor from A to common GND, for this simulation |
 | Relay NC | Unconnected |
 
 The load label is **Heater indicator — simulation**. It is supplied only through the relay contacts; no second GPIO drives it. Sensor, ESP32 and relay/load are arranged from left to right. The initial simulated temperature is 22 C. No mains load is represented.
 
-### Relay verification is outstanding
+### Relay polarity and load reference
 
-The requested behavior is HIGH closes COM-NO and lights the load; LOW opens COM-NO and extinguishes it. The circuit initially uses `transistor="npn"` as authorized. The [Wokwi relay reference](https://docs.wokwi.com/parts/wokwi-relay-module) contradicts itself between the attribute table and operation text. This configuration has **not yet been verified in a running simulation**. The firmware polarity has not been inverted to hide that discrepancy.
+Measurements with Wokwi CLI 0.29.1 and Simulation API `1.0.0-20261117-ga10e9732` confirmed that `transistor="npn"` gives the required behavior: HIGH connects COM-NO; LOW connects COM-NC. `pnp` does the opposite. The attribute table in the [official relay reference](https://docs.wokwi.com/parts/wokwi-relay-module) agrees with those measurements; its Operation paragraphs describe the opposite polarity. This circuit uses `npn`; firmware HIGH/LOW logic remains unchanged.
 
-`tests/hysteresis-relay.test.yaml` asserts GPIO26, COM, NO and the actual LED load pins. A GPIO or serial assertion alone is insufficient. The load-side assertions and visual LED observation must pass before claiming correct relay behavior. If they fail, investigate the supported `transistor` configuration, record the evidence and preserve the requested HIGH/LOW behavior. A floating output or unsupported pin assertion must not be counted as a pass. Native tests do not establish contact polarity or LED current.
+An open contact does not imply digital LOW. In an isolated diagnostic, GPIO32 sensed NO, GPIO33 sensed NC and GPIO25 sensed the LED anode. Switching their weak internal pull-up/pull-down references made an open contact and the disconnected anode change between 1 and 0; a contact connected to COM stayed at 1 with either bias. With `npn` and LOW, NO and the anode followed the bias while NC stayed at 1. With HIGH, NO and the anode stayed at 1 while NC followed the bias. `pnp` reversed the connected/open states. This demonstrates the floating nodes rather than inferring them from a single `expect-pin` result. The diagnostic firmware and extra probe wires are confined to ignored `build/relay-diagnosis/probe/`.
+
+The final circuit adds `loadReference`, a **10 kohm pull-down directly at the LED anode**, leaving the 330 ohm series resistor and 4.7 kohm sensor pull-up intact. It gives the switched load a defined OFF reference. Its ideal upper-bound current at 5 V is 0.5 mA; this is a selected simulation reference, not a physical specification from the report. Wokwi [documents external pull-down resistors](https://docs.wokwi.com/parts/wokwi-resistor) while noting its limited analog model. In the measured reference variant, LOW produced A=0/C=0 even while the upstream open NO still read 1; HIGH produced A=1/C=0. A resistor on the load side does not make an open NO's API reading a reliable continuity measurement.
+
+The scenarios therefore check the referenced LED anode and grounded cathode, relay IN and the COM supply. ON additionally checks the closed NO contact; OFF never assumes a digital level on the open NO. A trial assertion on the final circuit's unconnected NC returned `Pin not found: NC`; NC continuity was measured through the temporary GPIO probe, and no unavailable NC API assertion is counted as a pass. GPIO26 and serial messages alone cannot pass the load checks. These assertions verify the virtual load's electrical drive, not optical brightness, analog LED current or physical hardware.
 
 ## Demonstration control rules
 
@@ -161,7 +166,8 @@ $scenarios = @('tests/startup.test.yaml', 'tests/startup-heating.test.yaml',
                'tests/hysteresis-relay.test.yaml', 'tests/overtemperature.test.yaml')
 foreach ($scenario in $scenarios) {
     $name = [IO.Path]::GetFileNameWithoutExtension($scenario)
-    & $ichuWokwi . --scenario $scenario --timeout 120000 --timeout-exit-code 1 `
+    $timeoutMs = if ($scenario -like 'tests/startup*') { 15000 } else { 30000 }
+    & $ichuWokwi . --scenario $scenario --timeout $timeoutMs --timeout-exit-code 1 `
         --serial-log-file (Join-Path 'build' ($name + '.serial.log'))
     if ($LASTEXITCODE -ne 0) { throw "Wokwi failed: $scenario" }
 }
