@@ -58,7 +58,7 @@ Change the `constexpr` settings in `WaterControllerConfig.h`, then rebuild the f
 | Between 18 and 20 C | Preserve the previous state |
 | Startup and fault recovery | Three consecutive valid readings, with output OFF until the third |
 | Conversion start interval | 1000 ms; first conversion starts as soon as initialization permits |
-| DS18B20 resolution / conversion wait | 12 bits / at least 750 ms after the driver's STARTCONVO timestamp |
+| DS18B20 resolution / conversion wait | 12 bits / at least 750000 us after STARTCONVO returns, checked with `micros()` |
 | Stale reading | More than 3000 ms without a completed valid reading forces OFF and restarts qualification |
 | Overtemperature lock | Any valid temperature >= 30.0 C forces OFF, including during qualification |
 | Automatic rearm | Three consecutive valid readings <= 25.0 C |
@@ -68,6 +68,8 @@ An invalid reading resets both counters, forces OFF and preserves an existing ov
 The driver checks one DS18B20 address, external power, resolution, conversion completion, bus presence, scratchpad CRC, finite values and the **sensor's** -55 to 125 C range. It does not apply the collar's body-temperature range. Numeric error sentinels are not accepted as usable temperatures. A completed, CRC-valid reading of 85 C is accepted as temperature and enters the overtemperature lock.
 
 Conversions do not block `loop()`. Before a result is available, `poll()` returns no new reading; cached temperatures cannot increment qualification. Errors trigger rediscovery on a later scheduled attempt. The adapter avoids DallasTemperature 4.0.6 `begin()` (which retries with `delay()`) and uses direct OneWire discovery. Scratchpad autosave is disabled to avoid the driver's EEPROM-write wait. Bus transactions themselves are synchronous and short; the 750 ms conversion wait uses elapsed time.
+
+The conversion deadline uses unsigned microsecond subtraction. A millisecond timestamp is truncated: a difference of 750 integer milliseconds can represent less than 750 ms of actual elapsed time. The separate millisecond clock still schedules requests and rejects unread conversions older than 3000 ms, even after a `micros()` rollover. Completion is still checked with `isConversionComplete()` before reading the scratchpad; presence, CRC, resolution and sensor-range checks remain in place.
 
 This software lock and shutdown behavior are simulation features, not an independent physical safety mechanism. The report does not define sensor-failure handling; this version implements the behavior explicitly authorized for the demonstration.
 
@@ -105,7 +107,7 @@ Get-ChildItem -LiteralPath (Join-Path $repo 'build') -File
 
 `wokwi.toml` selects `build/sketch.ino.bin` and `build/sketch.ino.elf`. No filesystem partition is used. The collar's `sketch.ino.flash.bin` is a separate workflow-generated image including its LittleFS partition table; that transformation is not copied into this application.
 
-## Native controller tests
+## Native controller and sensor driver tests
 
 From the repository root in PowerShell, using the CLion compiler only for the native test:
 
@@ -115,6 +117,9 @@ $compilerBin = 'C:\Users\HP SUPPORT\AppData\Local\Programs\CLion\bin\mingw\bin'
 $testDir = Join-Path ([IO.Path]::GetTempPath()) ('ichu-water-test-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $testDir | Out-Null
 $testExe = Join-Path $testDir 'temperature_control_test.exe'
+$driverTestExe = Join-Path $testDir 'temperature_sensor_test.exe'
+# Installed library directory from the isolated Arduino configuration above.
+$dallasDir = 'C:\Users\HP SUPPORT\AppData\Local\Temp\iwc-5cb4a3d9\user\libraries\DallasTemperature'
 $savedTaskPath = $env:PATH
 try {
     $env:PATH = $compilerBin + ';' + $savedTaskPath
@@ -123,10 +128,19 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Native compilation failed' }
     & $testExe
     if ($LASTEXITCODE -ne 0) { throw 'Native controller tests failed' }
+    & (Join-Path $compilerBin 'g++.exe') -std=c++17 -DARDUINO=10819 -Wall -Wextra -Werror -pedantic `
+        -I tests/sensor_support -I $dallasDir -I $repo `
+        tests/temperature_sensor_test.cpp TemperatureSensor.cpp (Join-Path $dallasDir 'DallasTemperature.cpp') `
+        -o $driverTestExe
+    if ($LASTEXITCODE -ne 0) { throw 'Sensor driver test compilation failed' }
+    & $driverTestExe
+    if ($LASTEXITCODE -ne 0) { throw 'Sensor driver timing tests failed' }
 } finally { $env:PATH = $savedTaskPath }
 ```
 
 The tests exercise startup, inclusive hysteresis, both recovery outcomes, interrupted qualification, driver/CRC/conversion/configuration errors, NaN/infinities, sensor-range endpoints, stale data, `millis()` wraparound, 30/25 C locking and rearm, valid 85 C, and restart through simulated sensor and actuator interfaces. They test this controller, not the panel or collar firmware. They do not verify electrical behavior or the actual DS18B20 bus implementation.
+
+`temperature_control_test.cpp` has 337 checks using `FakeTemperature` and `FakeHeater`; it does not execute `TemperatureSensor.cpp`. The separate `temperature_sensor_test.cpp` compiles that real adapter and the installed DallasTemperature implementation against the deterministic clock and OneWire protocol double in `tests/sensor_support/`. Its 48 checks cover the fractional-millisecond regression, single-use results, request cadence, non-blocking behavior, genuinely incomplete conversions, presence/CRC/configuration/range errors, clock rollover and stale conversion rejection. This regression suite does not establish how Wokwi's virtual DS18B20 behaves. CI runs both native suites and compiles the firmware separately.
 
 ## Open and operate Wokwi
 
@@ -181,6 +195,32 @@ The actual device-to-cloud transport, support for actuator events, persistent bu
 The four Wokwi scenarios run only when the repository secret `WOKWI_CLI_TOKEN` is available. Otherwise the job records that simulation was not executed. The runner uses Wokwi CLI 0.29.1; its Linux static x64 SHA256 was obtained from the [official release metadata](https://api.github.com/repos/wokwi/wokwi-cli/releases/tags/v0.29.1). This differs from the Windows executable's hash. The workflow has been prepared here; it has not been executed on GitHub as part of local verification.
 
 ## Verification results
+
+### Earlier sensor timing investigation (2026-11-26)
+
+The operator reported a running `startup.test.yaml` simulation with repeated `conversion-incomplete`, no valid temperatures, subsequent `STALE` shutdown and a connection timeout. That run reached the firmware; it is not evidence of a token failure. The other three scenarios were not reached in that run.
+
+The installed DallasTemperature package is 4.0.6 and OneWire is 2.3.8. Its `requestTemperaturesByAddress()` timestamps `millis()` after sending STARTCONVO; `isConversionComplete()` only reads one bus bit. The [DS18B20 specification](https://www.analog.com/media/en/technical-documentation/data-sheets/ds18b20.pdf) gives a maximum conversion time of 750 ms at 12 bits. A deterministic regression reproduced a real adapter defect: at a difference of 750 integer milliseconds, only **749915 us** had elapsed. The original adapter rejected that conversion; the corrected adapter waits for the full **750000 us** and still rejects a conversion whose completion bit remains low.
+
+This establishes the premature-deadline defect in the adapter. At that stage, its causal relationship to the reported Wokwi failure, and any additional virtual-sensor limitation, were **unverified in a running simulation**. The collar's driver initializes DallasTemperature and uses a blocking broadcast request and indexed read at 10 bits; neither that sequence nor its framework-driver comment proves the cause here. The collar's unpinned `libraries.txt` does not establish which versions a historical collar build used.
+
+| Check at that stage | Actual result |
+| --- | --- |
+| Baseline ESP32 build from unchanged root sources | Exit 0; source snapshot saved before editing. |
+| Driver regression against the original adapter | Native compile exit 0; execution exit 1: 48 checks, 3 failures at the premature deadline. |
+| Driver regression after correction | Compile and execution exit 0: 48 checks, 0 failures. |
+| Original controller suite | Compile and execution exit 0: 337 checks, 0 failures. |
+| Corrected ESP32 build, FQBN `esp32:esp32:esp32`, core 3.3.4 | Exit 0; 288835 bytes program storage, 20920 bytes global RAM. Four dependency warnings in OneWire; none in project sources. |
+| Corrected `startup.test.yaml`, 15000 simulated ms | CLI exit 1 **before simulation started**: `Missing WOKWI_CLI_TOKEN environment variable`. This tools process did not inherit the Windows token. |
+| `startup-heating.test.yaml` | Not executed: startup could not be run from this process. |
+| `hysteresis-relay.test.yaml` | Not executed; contacts and load remain unverified. |
+| `overtemperature.test.yaml` | Not executed. |
+
+No scenario assertions were weakened, no sensor or regulation settings were changed, and no completion check was removed during that sensor investigation. Its logs, the before/after source and firmware hashes, and a temporary timing probe are under ignored `build/sensor-diagnosis/`. The corrected binaries selected by `wokwi.toml` were rebuilt from the root sources; the probe was prepared but not executed. No Git commands were run during that investigation.
+
+From a PowerShell process that already has the token, run the four-scenario loop above. For this workspace's saved diagnostic probe, `& .\build\sensor-diagnosis\verify-wokwi.ps1 -IncludeTimingProbe` first measures the original deadline and the same conversion at 752000 us, then rebuilds the current root sources in a `finally` block and runs startup with a 15000 ms limit. It runs the other three scenarios only after startup passes, records individual exit codes and keeps all logs under `build/sensor-diagnosis/`. The extra probe wait is instrumentation, not the production conversion deadline. Never pass the token as a literal argument or save it to a file.
+
+### Historical local verification (2026-11-25)
 
 Local verification on 2026-11-25 distinguishes these separate results:
 
