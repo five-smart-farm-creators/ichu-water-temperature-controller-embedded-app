@@ -155,6 +155,25 @@ foreach ($scenario in $scenarios) {
 
 `startup.test.yaml` checks qualification at the default 22 C. `startup-heating.test.yaml` changes the sensor to 18 C at the beginning of the scenario and checks that the first two readings keep both the output and load OFF, and the third enables them. The other scenarios cover inclusive hysteresis, the switched load, overtemperature and interrupted rearm. Each invocation starts a new simulation. A timeout is explicitly a failure, and each serial log is saved under the ignored `build/` directory.
 
+## Reference review
+
+The sibling repositories were inspected without modification. These findings describe the local copies that were available during this task:
+
+| Source | Finding and consequence |
+| --- | --- |
+| Collar and alert-panel embedded apps | Confirmed root Arduino/C++ sources, `constexpr` configuration, Arduino CLI/core 3.3.4, Wokwi files and YAML scenarios. Their device-specific GPIO, sensing rules and network tasks are not water-controller requirements. |
+| Edge `monitoring/interfaces/services.py` | Confirmed collar-oriented `POST /api/v1/monitoring/telemetry-readings`, `extra="forbid"`, and authentication using `X-API-Key`. Its request fields do not include water temperature or heater state. No compatible water-controller ingestion or forwarding flow was found in the inspected Edge source. |
+| Collar `sketch.ino` / `CollarConfig.h`, panel `EdgeAlertClient.cpp` / `PanelConfig.h`, and Edge HTTP interface | The collar constructs a POST client for `/api/v1/monitoring/telemetry-readings`; the panel reads `/api/v1/monitoring/alerts`. Both configure `Authorization: ApiKey ...`, whereas the inspected Edge handlers require `X-API-Key`. The code does not substantiate the panel comment that both forms are accepted. This version does not inherit that mismatch or claim a successful integration. |
+| Backend `OperationsMonitoring/Interfaces/Rest/WaterControllersController.cs` and `Resources/WaterControllerReadingResource.cs` | A water-reading contract exists separately from the Edge collar endpoint: `POST /api/v1/water-controllers/{controllerId}/readings`, with gateway authentication. It does not establish a device-to-Edge route. Cloud communication remains deferred. |
+| Web `src/app/features/iot-assets/domain/model/device.model.ts` | `WaterController` exists as a device type, but the managed inventory is restricted to `SmartCollar`. A type declaration is not evidence of a working water-controller integration. |
+| Mobile `lib/features/operations_monitoring/` | Confirmed waterer status, temperature/validity, configured range, heater state, communication status and reading history. Its API client queries water-trough status and water-controller readings, and its mapping expects `EdgeGateway` origin. That read-side expectation does not prove an implemented Edge ingestion flow. |
+| Local report DSL `report/assets/diagram-sources/structurizr/workspace-ichu-c4.dsl` | Confirmed water-controller components, local regulation, HAL/drivers, local buffer and a cloud adapter; the cloud relation targets the backend with HTTPS/JSON. The statement that this local DSL omits the controller is contradicted by its content. The exported diagrams remain conceptual hardware references. |
+| Report annex J | The requested annex path was absent in the local copy, and the supplied remote URL could not be fetched during this review. Its contents were not independently verified from those sources; the user explicitly confirmed the prototype's scope limitation. |
+
+The backend reading resource requires stable `readingId`, decimal `temperature`, `temperatureUnit: Celsius`, `isValid`, `heaterState: Off/On` and `capturedAt` with an explicit offset and microsecond precision. Its controller description requires `X-Gateway-Key`, rejects nonempty `events`, returns 200 for an identical retry and 409 for different content with the same controller/reading identity. This is a confirmed future contract, not a communication path implemented by this firmware.
+
+The actual device-to-cloud transport, support for actuator events, persistent buffer policy and physical hardware specifications remain outside this local demonstration. None is inferred from the mobile UI, the conceptual diagrams or the collar telemetry contract.
+
 ## Continuous integration
 
 `.github/workflows/firmware-checks.yml` follows the reference projects' Arduino CLI build approach. It runs the native tests, installs Arduino CLI 1.6.0, core 3.3.4 and the versions in `libraries.txt`, and builds the root sources in a temporary `sketch` folder. It does not add PlatformIO or run a backend.
