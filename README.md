@@ -154,3 +154,9 @@ foreach ($scenario in $scenarios) {
 ```
 
 `startup.test.yaml` checks qualification at the default 22 C. `startup-heating.test.yaml` changes the sensor to 18 C at the beginning of the scenario and checks that the first two readings keep both the output and load OFF, and the third enables them. The other scenarios cover inclusive hysteresis, the switched load, overtemperature and interrupted rearm. Each invocation starts a new simulation. A timeout is explicitly a failure, and each serial log is saved under the ignored `build/` directory.
+
+## Continuous integration
+
+`.github/workflows/firmware-checks.yml` follows the reference projects' Arduino CLI build approach. It runs the native tests, installs Arduino CLI 1.6.0, core 3.3.4 and the versions in `libraries.txt`, and builds the root sources in a temporary `sketch` folder. It does not add PlatformIO or run a backend.
+
+The four Wokwi scenarios run only when the repository secret `WOKWI_CLI_TOKEN` is available. Otherwise the job records that simulation was not executed. The runner uses Wokwi CLI 0.29.1; its Linux static x64 SHA256 was obtained from the [official release metadata](https://api.github.com/repos/wokwi/wokwi-cli/releases/tags/v0.29.1). This differs from the Windows executable's hash. The workflow has been prepared here; it has not been executed on GitHub as part of local verification.
