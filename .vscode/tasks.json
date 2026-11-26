@@ -4,14 +4,20 @@
     {
       "label": "build esp32 firmware",
       "type": "process",
-      "command": "powershell.exe",
+      "command": "/bin/bash",
       "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-File",
-        "${workspaceFolder}/build.ps1"
+        "${workspaceFolder}/build.sh"
       ],
+      "windows": {
+        "command": "powershell.exe",
+        "args": [
+          "-NoProfile",
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "${workspaceFolder}/build.ps1"
+        ]
+      },
       "options": {
         "cwd": "${workspaceFolder}"
       },
