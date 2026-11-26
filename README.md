@@ -179,3 +179,24 @@ The actual device-to-cloud transport, support for actuator events, persistent bu
 `.github/workflows/firmware-checks.yml` follows the reference projects' Arduino CLI build approach. It runs the native tests, installs Arduino CLI 1.6.0, core 3.3.4 and the versions in `libraries.txt`, and builds the root sources in a temporary `sketch` folder. It does not add PlatformIO or run a backend.
 
 The four Wokwi scenarios run only when the repository secret `WOKWI_CLI_TOKEN` is available. Otherwise the job records that simulation was not executed. The runner uses Wokwi CLI 0.29.1; its Linux static x64 SHA256 was obtained from the [official release metadata](https://api.github.com/repos/wokwi/wokwi-cli/releases/tags/v0.29.1). This differs from the Windows executable's hash. The workflow has been prepared here; it has not been executed on GitHub as part of local verification.
+
+## Verification results
+
+Local verification on 2026-11-25 distinguishes these separate results:
+
+| Check | Result |
+| --- | --- |
+| Tool execution | Arduino CLI 1.6.0, GCC 15.2.0 and Wokwi CLI 0.29.1 execute successfully. |
+| Installed ESP32 core and libraries | Core 3.3.4, OneWire 2.3.8 and DallasTemperature 4.0.6 confirmed in the isolated task configuration. |
+| Native controller tests | Compilation and execution returned 0; **337 controller checks, 0 failures**. These are the controller's tests, not the panel's tests. |
+| ESP32 firmware | `arduino-cli --config-file <isolated-config> compile --fqbn esp32:esp32:esp32 --warnings all --output-dir build <temporary-sketch>` returned **0**. Program storage: 288799 bytes; global RAM: 20912 bytes. |
+| Compiler warnings | Four warnings originate in OneWire 2.3.8 and its ESP32 GPIO macros. No warnings originated in this project's sources. The installed dependency was not patched. |
+| Wokwi diagram lint | `wokwi-cli lint --warnings-as-errors .` returned **0**, with two informational `unsupported-part` messages for the approved DS18B20 and ESP32 DevKitC V4. This is limited static validation, not a simulated circuit test. |
+| Declared circuit | **13 static checks passed:** component types/attributes, initial temperature, resistor values, layout and all 14 declared connections match the approved simulation. This does not verify electrical behavior. |
+| Command examples and CI scripts | All four PowerShell blocks in this README parsed without syntax errors; all six workflow Bash blocks passed `bash -n` with exit code 0. The GitHub workflow and Wokwi scenarios were not executed by these syntax checks. |
+| Wokwi scenarios | **Not executed:** `WOKWI_CLI_TOKEN` was absent from the process, user and machine environments. |
+| Relay contacts and LED | **Not verified in simulation.** The active-HIGH requirement and `npn` configuration still require the load-side assertions and visual check. |
+| Sensor faults | Native fake sensor/output tests passed. A running DS18B20 disconnect/CRC-injection test remains unavailable through the documented temperature-only automation control. |
+| Physical hardware | Not tested or validated. |
+
+The compile generated `sketch.ino.bin`, `.elf`, `.bootloader.bin`, `.partitions.bin`, `.merged.bin` and `.map`. The simulation selects the generated application `.bin` and `.elf`; no `flash.bin` is invented. Current source hashes match the temporary sketch that produced those artifacts. Local compile/lint/native logs and command/result metadata are saved in `build/verification/`, which is ignored. Compilation and lint do not establish that Wokwi ran successfully.
