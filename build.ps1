@@ -45,9 +45,7 @@ $sketchDir = Join-Path $compileRoot 'sketch'
 $artifactDir = Join-Path $compileRoot 'output'
 try {
     New-Item -ItemType Directory -Path $sketchDir, $artifactDir -Force | Out-Null
-    Get-ChildItem -LiteralPath $repoRoot -File |
-        Where-Object { $_.Extension -in @('.ino', '.h', '.cpp') } |
-        Copy-Item -Destination $sketchDir
+    Copy-Item -LiteralPath (Join-Path $repoRoot 'sketch.ino') -Destination $sketchDir
 
     $compileArgs += @('compile', '--fqbn', 'esp32:esp32:esp32', '--warnings', 'all',
                       '--output-dir', $artifactDir, $sketchDir)
