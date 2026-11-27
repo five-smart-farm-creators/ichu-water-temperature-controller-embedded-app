@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Consolidate the application into `sketch.ino` and replace seven root headers and four implementation files with inline sections. Use pinned Modest IoT Nano Framework 1.3.0 sensor events, an event-handler mediator and actuator commands in the existing cooperative loop, preserving the control rules, DS18B20 timing, GPIO behavior and serial format. Update local builds, native test imports and CI for the single sketch.
+
 ### Added
 
 - Local ESP32 Wokwi demonstration with asynchronous 12-bit DS18B20 sampling, an active-HIGH relay command and a red indicator supplied through COM-NO.
