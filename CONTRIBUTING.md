@@ -31,7 +31,7 @@ Replace `path/to/sketch` with the directory containing the main `.ino` file.
 - Keep separate responsibilities for temperature sensing, temperature regulation, heating control, connectivity and local buffering.
 - Place hardware access in sensor and actuator drivers. Keep temperature regulation rules independent of hardware details where practical.
 - `sketch.ino` should initialize the hardware and assemble the application components.
-- Store thresholds, sampling intervals and other settings in `WaterControllerConfig.h` as `constexpr` values.
+- Store thresholds, sampling intervals and other settings as `constexpr` values in the `WaterControllerConfig` namespace inside `sketch.ino`.
 - Keep periodic work non-blocking. Use `millis()` or scheduled tasks instead of `delay()` for temperature sampling and control.
 - Keep the heating actuator off during startup and whenever the temperature reading is invalid or the sensor fails. Define and document the safe behavior for over-temperature conditions.
 - If cloud reporting or offline buffering is implemented, keep it separate from local temperature control so a network outage does not stop the controller from regulating the water.
