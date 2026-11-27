@@ -1,7 +1,8 @@
 // Compile the real sensor adapter AND DallasTemperature.cpp against a timed OneWire test bus.
 #include <stdio.h>
 
-#include "TemperatureSensor.h"
+#define ICHU_NATIVE_TEST
+#include "../sketch.ino"
 
 namespace {
 int checks = 0;
@@ -25,7 +26,7 @@ struct Rig {
         SensorTest::bus = {};
         sensor.begin(millis());
     }
-    bool poll() { return sensor.poll(millis(), reading); }
+    bool poll() { return sensor.sample(millis(), reading); }
     void start() {
         check(!poll(), "request starts asynchronously without returning cached temperature");
         check(SensorTest::bus.requests == 1, "one addressed conversion is started");

@@ -2,7 +2,9 @@
 #include <limits>
 #include <stdio.h>
 
-#include "WaterController.h"
+#define ICHU_NATIVE_TEST
+#define ICHU_CONTROL_TEST
+#include "../sketch.ino"
 
 namespace {
 
