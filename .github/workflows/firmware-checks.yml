@@ -14,13 +14,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Test local control rules
+      - uses: arduino/setup-arduino-cli@v2
+        with:
+          version: '1.6.0'
+
+      - name: Install the framework for native control checks
         shell: bash
         run: |
           set -euo pipefail
+          config="$RUNNER_TEMP/ichu-native.yaml"
+          arduino-cli config init --dest-file "$config"
+          arduino-cli --config-file "$config" config set directories.data "$RUNNER_TEMP/ichu-native/data"
+          arduino-cli --config-file "$config" config set directories.downloads "$RUNNER_TEMP/ichu-native/downloads"
+          arduino-cli --config-file "$config" config set directories.user "$RUNNER_TEMP/ichu-native/user"
+          arduino-cli --config-file "$config" lib update-index
+          arduino-cli --config-file "$config" lib install Modest-IoT-Nano-Framework@1.3.0 MQTT@2.6.0
+
+      - name: Test local control rules through framework events and commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          modest="$RUNNER_TEMP/ichu-native/user/libraries/Modest-IoT-Nano-Framework/src"
           mkdir -p build
-          g++ -std=c++17 -Wall -Wextra -Werror -pedantic -I . \
-            tests/temperature_control_test.cpp TemperatureRegulator.cpp WaterController.cpp \
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic \
+            -I tests/sensor_support -I "$modest" \
+            tests/temperature_control_test.cpp "$modest/Sensor.cpp" "$modest/Actuator.cpp" \
             -o build/temperature_control_test
           build/temperature_control_test
 
@@ -56,15 +74,17 @@ jobs:
             arduino-cli --config-file "$config" lib install "$library"
           done < libraries.txt
 
-      - name: Test sensor timing with the pinned DallasTemperature implementation
+      - name: Test sensor timing with the pinned framework and DallasTemperature implementation
         shell: bash
         run: |
           set -euo pipefail
           dallas="$RUNNER_TEMP/ichu-arduino/user/libraries/DallasTemperature"
+          modest="$RUNNER_TEMP/ichu-arduino/user/libraries/Modest-IoT-Nano-Framework/src"
           mkdir -p build
           g++ -std=c++17 -DARDUINO=10819 -Wall -Wextra -Werror -pedantic \
-            -I tests/sensor_support -I "$dallas" -I . \
-            tests/temperature_sensor_test.cpp TemperatureSensor.cpp "$dallas/DallasTemperature.cpp" \
+            -I tests/sensor_support -I "$dallas" -I "$modest" \
+            tests/temperature_sensor_test.cpp "$dallas/DallasTemperature.cpp" \
+            "$modest/Sensor.cpp" "$modest/Actuator.cpp" \
             -o build/temperature_sensor_test
           build/temperature_sensor_test
 
@@ -74,7 +94,7 @@ jobs:
           set -euo pipefail
           sketch="$RUNNER_TEMP/ichu-build/sketch"
           mkdir -p "$sketch" build
-          cp ./*.ino ./*.h ./*.cpp "$sketch/"
+          cp ./sketch.ino "$sketch/"
           arduino-cli --config-file "$RUNNER_TEMP/ichu-arduino.yaml" compile \
             --fqbn esp32:esp32:esp32 --warnings all --output-dir build "$sketch"
           test -s build/sketch.ino.bin
