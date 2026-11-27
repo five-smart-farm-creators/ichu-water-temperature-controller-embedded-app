@@ -61,9 +61,7 @@ artifact_dir="$compile_root/output"
 mkdir -p "$sketch_dir" "$artifact_dir"
 
 # Arduino requires sketch.ino in a sketch folder; native test sources stay outside it.
-shopt -s nullglob
-sources=("$repo_root"/*.ino "$repo_root"/*.h "$repo_root"/*.cpp)
-cp "${sources[@]}" "$sketch_dir/"
+cp "$repo_root/sketch.ino" "$sketch_dir/"
 "$arduino_cli" "${compile_args[@]}" --output-dir "$artifact_dir" "$sketch_dir"
 
 # Only publish validated fresh artifacts to the paths selected by wokwi.toml.
