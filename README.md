@@ -8,22 +8,15 @@ No Wi-Fi, Internet, HTTP, MQTT, credentials, Edge or backend connection is initi
 
 ## Structure
 
-Sources stay at the root, as in the collar and alert-panel repositories:
+The application firmware lives entirely in the root `sketch.ino`:
 
 | File | Responsibility |
 | --- | --- |
-| `sketch.ino` | Composition root, non-blocking loop and serial observations |
-| `WaterControllerConfig.h` | Simulation pins, thresholds, qualification and timing as `constexpr` |
-| `WaterController.h/.cpp` | Coordinates fresh readings, regulation and output |
-| `TemperatureRegulator.h/.cpp` | Hardware-independent rules and RAM state |
-| `TemperatureReading.h` | Explicit errors and finite/sensor-range validation |
-| `WaterControllerHardware.h` | Sensor and output interfaces used by hardware and native test doubles |
-| `TemperatureSensor.h/.cpp` | Asynchronous 1-Wire conversion and checked scratchpad reading |
-| `RelayHeater.h/.cpp` | Active-HIGH GPIO26 output; LOW is written before output initialization |
+| `sketch.ino` | Configuration, reading validation, regulation, Modest sensor events and actuator commands, asynchronous DS18B20 driver, relay, non-blocking loop and serial observations |
 | `diagram.json`, `wokwi.toml`, `libraries.txt` | Circuit, generated firmware paths and pinned dependencies |
 | `tests/` | Native controller tests and Wokwi automation scenarios |
 
-The reference firmwares use Modest IoT Nano Framework. This local-only version uses a small `millis()` scheduler instead of its `Device` sampler/network engine, so no network task is introduced. Hardware drivers and regulation remain separate, without a dependency on a future cloud adapter.
+This firmware uses [Modest IoT Nano Framework 1.3.0](https://github.com/modest-iot/modest-iot-nano-framework/releases/tag/v1.3.0). `TemperatureSource` extends its `Sensor`: measurement requests emit data-read events only when a new result is available, and `WaterController` receives them as an `EventHandler`. `HeatingOutput` extends `Actuator`, which dispatches the heater commands. These events run synchronously in the existing non-blocking loop, preserving the sensor cadence, shutdown order and serial messages without starting the framework's `Device` sampler/network engine. The application has no separate root `.h` or `.cpp` files. Combining source files is an organization change; header count alone does not determine Wokwi runtime performance.
 
 ## Simulation wiring
 
@@ -54,7 +47,7 @@ The scenarios therefore check the referenced LED anode and grounded cathode, rel
 
 ## Demonstration control rules
 
-Change the `constexpr` settings in `WaterControllerConfig.h`, then rebuild the firmware. These values are the authorized demonstration profile:
+Change the `constexpr` settings in the `WaterControllerConfig` namespace inside `sketch.ino`, then rebuild the firmware. These values are the authorized demonstration profile:
 
 | Setting | Value |
 | --- | --- |
@@ -80,11 +73,11 @@ This software lock and shutdown behavior are simulation features, not an indepen
 
 ## Toolchain and build
 
-Verified versions: Arduino CLI **1.6.0**, ESP32 Arduino core **3.3.4**, OneWire **2.3.8**, DallasTemperature **4.0.6**, native GCC **15.2.0** and Wokwi CLI **0.29.1**. Only the two sensor libraries are required by this application; their versions are pinned in `libraries.txt`.
+Versions: Arduino CLI **1.6.0**, ESP32 Arduino core **3.3.4**, Modest IoT Nano Framework **1.3.0**, OneWire **2.3.8**, DallasTemperature **4.0.6**, native GCC **15.2.0** and Wokwi CLI **0.29.1**. `libraries.txt` pins the framework, both sensor libraries and the framework's MQTT **2.6.0** dependency. Installing MQTT does not initialize a network connection.
 
 Open this repository root in VS Code and select **Terminal > Run Build Task > build esp32 firmware**. The default shortcut is **Cmd+Shift+B** on macOS or **Ctrl+Shift+B** on Windows/Linux. The task runs `build.sh` with `/bin/bash` on macOS/Linux and `build.ps1` with `powershell.exe` on Windows; PowerShell is not required on macOS. These platform overrides follow the [VS Code task configuration](https://code.visualstudio.com/docs/debugtest/tasks#_operating-system-specific-properties).
 
-Both scripts copy only root firmware sources into a temporary `sketch` folder, compile for `esp32:esp32:esp32`, check fresh non-empty `.bin` and `.elf` files, and copy the generated artifacts into this repository's `build/` directory. They resolve the repository from the script location, independently of the terminal's working directory. Git ignores `build/`: pulling the repository downloads the build scripts, so compile locally before starting Wokwi.
+Both scripts copy only `sketch.ino` into a temporary `sketch` folder, compile for `esp32:esp32:esp32`, check fresh non-empty `.bin` and `.elf` files, and copy the generated artifacts into this repository's `build/` directory. They resolve the repository from the script location, independently of the terminal's working directory. Git ignores `build/`: pulling the repository downloads the build scripts, so compile locally before starting Wokwi.
 
 ### macOS and Linux
 
@@ -96,7 +89,7 @@ Install this project's pinned core and libraries once on that machine, then comp
 arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 arduino-cli core install esp32:esp32@3.3.4 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
 arduino-cli lib update-index
-arduino-cli lib install OneWire@2.3.8 DallasTemperature@4.0.6
+arduino-cli lib install OneWire@2.3.8 DallasTemperature@4.0.6 Modest-IoT-Nano-Framework@1.3.0 MQTT@2.6.0
 bash ./build.sh
 test -s build/sketch.ino.bin && test -s build/sketch.ino.elf && echo 'Firmware ready'
 ```
@@ -120,16 +113,14 @@ $ErrorActionPreference = 'Stop'
 
 The paths file points to an isolated temporary Arduino configuration. The installed packages were copied to a shorter temporary path after GCC failed to find an existing `bits/c++config.h` through its expanded Windows search path. No tool was downloaded again and no permanent PATH change was made. If temporary files are removed, prepare an equivalent isolated toolchain before building.
 
-From this repository root, compile a fresh temporary `sketch` directory. Only root implementation files are copied; tests with `main()` are excluded:
+From this repository root, compile a fresh temporary `sketch` directory. Only `sketch.ino` is copied; tests with `main()` are excluded:
 
 ```powershell
 $repo = (Get-Location).Path
 $compileRoot = Join-Path ([IO.Path]::GetTempPath()) ('ichu-water-build-' + [Guid]::NewGuid().ToString('N'))
 $sketchDir = Join-Path $compileRoot 'sketch'
 New-Item -ItemType Directory -Path $sketchDir | Out-Null
-Get-ChildItem -LiteralPath $repo -File |
-    Where-Object { $_.Extension -in @('.ino', '.h', '.cpp') } |
-    Copy-Item -Destination $sketchDir
+Copy-Item -LiteralPath (Join-Path $repo 'sketch.ino') -Destination $sketchDir
 & $ichuArduino --config-file $ichuArduinoConfig compile `
     --fqbn esp32:esp32:esp32 --warnings all `
     --output-dir (Join-Path $repo 'build') $sketchDir
@@ -152,17 +143,20 @@ $testExe = Join-Path $testDir 'temperature_control_test.exe'
 $driverTestExe = Join-Path $testDir 'temperature_sensor_test.exe'
 # Installed library directory from the isolated Arduino configuration above.
 $dallasDir = 'C:\Users\HP SUPPORT\AppData\Local\Temp\iwc-5cb4a3d9\user\libraries\DallasTemperature'
+$modestDir = 'C:\Users\HP SUPPORT\AppData\Local\Temp\iwc-5cb4a3d9\user\libraries\Modest-IoT-Nano-Framework\src'
 $savedTaskPath = $env:PATH
 try {
     $env:PATH = $compilerBin + ';' + $savedTaskPath
     & (Join-Path $compilerBin 'g++.exe') -std=c++17 -Wall -Wextra -Werror -pedantic `
-        -I $repo tests/temperature_control_test.cpp TemperatureRegulator.cpp WaterController.cpp -o $testExe
+        -I tests/sensor_support -I $modestDir tests/temperature_control_test.cpp `
+        (Join-Path $modestDir 'Sensor.cpp') (Join-Path $modestDir 'Actuator.cpp') -o $testExe
     if ($LASTEXITCODE -ne 0) { throw 'Native compilation failed' }
     & $testExe
     if ($LASTEXITCODE -ne 0) { throw 'Native controller tests failed' }
     & (Join-Path $compilerBin 'g++.exe') -std=c++17 -DARDUINO=10819 -Wall -Wextra -Werror -pedantic `
-        -I tests/sensor_support -I $dallasDir -I $repo `
-        tests/temperature_sensor_test.cpp TemperatureSensor.cpp (Join-Path $dallasDir 'DallasTemperature.cpp') `
+        -I tests/sensor_support -I $dallasDir -I $modestDir `
+        tests/temperature_sensor_test.cpp (Join-Path $dallasDir 'DallasTemperature.cpp') `
+        (Join-Path $modestDir 'Sensor.cpp') (Join-Path $modestDir 'Actuator.cpp') `
         -o $driverTestExe
     if ($LASTEXITCODE -ne 0) { throw 'Sensor driver test compilation failed' }
     & $driverTestExe
@@ -172,7 +166,7 @@ try {
 
 The tests exercise startup, inclusive hysteresis, both recovery outcomes, interrupted qualification, driver/CRC/conversion/configuration errors, NaN/infinities, sensor-range endpoints, stale data, `millis()` wraparound, 30/25 C locking and rearm, valid 85 C, and restart through simulated sensor and actuator interfaces. They test this controller, not the panel or collar firmware. They do not verify electrical behavior or the actual DS18B20 bus implementation.
 
-`temperature_control_test.cpp` has 337 checks using `FakeTemperature` and `FakeHeater`; it does not execute `TemperatureSensor.cpp`. The separate `temperature_sensor_test.cpp` compiles that real adapter and the installed DallasTemperature implementation against the deterministic clock and OneWire protocol double in `tests/sensor_support/`. Its 48 checks cover the fractional-millisecond regression, single-use results, request cadence, non-blocking behavior, genuinely incomplete conversions, presence/CRC/configuration/range errors, clock rollover and stale conversion rejection. This regression suite does not establish how Wokwi's virtual DS18B20 behaves. CI runs both native suites and compiles the firmware separately.
+Both suites include the actual `sketch.ino` and compile the installed Modest `Sensor.cpp` and `Actuator.cpp`. Test-only macros exclude the Arduino entry points and ESP32 relay; the controller suite also excludes the DS18B20 adapter. `temperature_control_test.cpp` retains its 337 checks using `FakeTemperature` and `FakeHeater`, now through the framework's event and command dispatch. `temperature_sensor_test.cpp` runs the real adapter through `Sensor::on`, with the installed DallasTemperature implementation and the deterministic clock/OneWire test bus in `tests/sensor_support/`. Its 48 checks cover the fractional-millisecond regression, single-use results, request cadence, non-blocking behavior, genuinely incomplete conversions, presence/CRC/configuration/range errors, clock rollover and stale conversion rejection. Wokwi scenarios separately verify the virtual circuit. CI runs both native suites before compiling the firmware.
 
 ## Open and operate Wokwi
 
@@ -223,13 +217,19 @@ The actual device-to-cloud transport, support for actuator events, persistent bu
 
 ## Continuous integration
 
-`.github/workflows/firmware-checks.yml` follows the reference projects' Arduino CLI build approach. It runs the native tests, installs Arduino CLI 1.6.0, core 3.3.4 and the versions in `libraries.txt`, and builds the root sources in a temporary `sketch` folder. It does not add PlatformIO or run a backend.
+`.github/workflows/firmware-checks.yml` follows the reference projects' Arduino CLI build approach. It installs Arduino CLI 1.6.0, core 3.3.4 and the versions in `libraries.txt`, runs both native suites against the sketch and real framework dispatch, and builds `sketch.ino` in a temporary `sketch` folder. It does not add PlatformIO or run a backend.
 
 The four Wokwi scenarios run only when the repository secret `WOKWI_CLI_TOKEN` is available. Otherwise the job records that simulation was not executed. The runner uses Wokwi CLI 0.29.1; its Linux static x64 SHA256 was obtained from the [official release metadata](https://api.github.com/repos/wokwi/wokwi-cli/releases/tags/v0.29.1). This differs from the Windows executable's hash. The workflow has been prepared here; it has not been executed on GitHub as part of local verification.
 
 ## Verification results
 
-### Current build and simulation checks (2026-11-26)
+### Modest 1.3.0 single-sketch migration (2026-11-27)
+
+The original firmware passed all 337 controller checks, 48 sensor-driver checks and four unchanged Wokwi scenarios before migration. The migrated sketch passed the same 385 native checks using the installed Modest `Sensor.cpp` and `Actuator.cpp`, and all four Wokwi scenarios again: startup, startup heating qualification, hysteresis/relay contacts, and overtemperature/rearm. Each simulation returned exit 0 using Wokwi CLI 0.29.1 and Simulation API `1.0.0-20261126-gb061761c`. No test assertions, thresholds, wiring or scenario steps were changed. The configuration, regulator implementation and sensor conversion/validation implementation were also compared directly with the original sources.
+
+The Windows build script generated fresh non-empty firmware and ELF files from the single sketch. Program storage is **977351 bytes (74%)** and static RAM is **49784 bytes (15%)**. This is larger than the previous build because Arduino also compiles and links dependencies of the framework's unused modules; no Wi-Fi/BLE connection or framework background engine is initialized by the application. The build reported nine warnings from Modest, OneWire and ESP32 dependency sources, with none from the application. The PowerShell/Bash build scripts and eight CI shell blocks passed syntax checks; the updated GitHub workflow has not been run remotely. Build results, source/binary hashes and before/after simulation logs are under ignored `build/modest-migration/`.
+
+### Previous build and simulation checks (2026-11-26, before framework migration)
 
 The Windows build task completed with exit 0 and generated non-empty `build/sketch.ino.bin` and `build/sketch.ino.elf` from the root firmware sources. Program storage is 288835 bytes and global RAM is 20920 bytes. The four compiler warnings originate in OneWire and its ESP32 GPIO macros, with none in this project's sources. Both native suites passed again: 337 controller checks and 48 sensor-driver checks, with zero failures.
 
