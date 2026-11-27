@@ -1,0 +1,21 @@
+# An open NO contact has no defined digital level. Check the referenced LED anode and cathode.
+name: Water controller startup
+version: 1
+author: SmartFarm
+steps:
+  - wait-serial: '[boot] ICHU water controller'
+  - expect-pin: { part-id: esp, name: 26, value: 0 }
+  - expect-pin: { part-id: relay, name: IN, value: 0 }
+  - expect-pin: { part-id: relay, name: COM, value: 1 }
+  - delay: 100ms
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }
+  - wait-serial: '[reading] seq=1 temp=22.00C heater=OFF state=QUALIFYING valid=1/3'
+  - expect-pin: { part-id: esp, name: 26, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - wait-serial: '[reading] seq=2 temp=22.00C heater=OFF state=QUALIFYING valid=2/3'
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - wait-serial: '[reading] seq=3 temp=22.00C heater=OFF state=READY valid=3/3'
+  - expect-pin: { part-id: heaterIndicator, name: A, value: 0 }
+  - expect-pin: { part-id: relay, name: IN, value: 0 }
+  - expect-pin: { part-id: heaterIndicator, name: C, value: 0 }

@@ -1,0 +1,134 @@
+name: Firmware checks
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+        with:
+          version: '1.6.0'
+
+      - name: Install the framework for native control checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/ichu-native.yaml"
+          arduino-cli config init --dest-file "$config"
+          arduino-cli --config-file "$config" config set directories.data "$RUNNER_TEMP/ichu-native/data"
+          arduino-cli --config-file "$config" config set directories.downloads "$RUNNER_TEMP/ichu-native/downloads"
+          arduino-cli --config-file "$config" config set directories.user "$RUNNER_TEMP/ichu-native/user"
+          arduino-cli --config-file "$config" lib update-index
+          arduino-cli --config-file "$config" lib install Modest-IoT-Nano-Framework@1.3.0 MQTT@2.6.0
+
+      - name: Test local control rules through framework events and commands
+        shell: bash
+        run: |
+          set -euo pipefail
+          modest="$RUNNER_TEMP/ichu-native/user/libraries/Modest-IoT-Nano-Framework/src"
+          mkdir -p build
+          g++ -std=c++17 -Wall -Wextra -Werror -pedantic \
+            -I tests/sensor_support -I "$modest" \
+            tests/temperature_control_test.cpp "$modest/Sensor.cpp" "$modest/Actuator.cpp" \
+            -o build/temperature_control_test
+          build/temperature_control_test
+
+  firmware:
+    needs: native
+    runs-on: ubuntu-latest
+    env:
+      WOKWI_CLI_TOKEN: ${{ secrets.WOKWI_CLI_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: arduino/setup-arduino-cli@v2
+        with:
+          version: '1.6.0'
+
+      - name: Install the confirmed core and pinned libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/ichu-arduino.yaml"
+          arduino-cli config init --dest-file "$config"
+          arduino-cli --config-file "$config" config set directories.data "$RUNNER_TEMP/ichu-arduino/data"
+          arduino-cli --config-file "$config" config set directories.downloads "$RUNNER_TEMP/ichu-arduino/downloads"
+          arduino-cli --config-file "$config" config set directories.user "$RUNNER_TEMP/ichu-arduino/user"
+          arduino-cli --config-file "$config" config add board_manager.additional_urls \
+            https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli --config-file "$config" core update-index
+          arduino-cli --config-file "$config" core install esp32:esp32@3.3.4
+          arduino-cli --config-file "$config" lib update-index
+          while IFS= read -r library || [ -n "$library" ]; do
+            library="${library%$'\r'}"
+            [[ -z "$library" || "$library" == \#* ]] && continue
+            arduino-cli --config-file "$config" lib install "$library"
+          done < libraries.txt
+
+      - name: Test sensor timing with the pinned framework and DallasTemperature implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          dallas="$RUNNER_TEMP/ichu-arduino/user/libraries/DallasTemperature"
+          modest="$RUNNER_TEMP/ichu-arduino/user/libraries/Modest-IoT-Nano-Framework/src"
+          mkdir -p build
+          g++ -std=c++17 -DARDUINO=10819 -Wall -Wextra -Werror -pedantic \
+            -I tests/sensor_support -I "$dallas" -I "$modest" \
+            tests/temperature_sensor_test.cpp "$dallas/DallasTemperature.cpp" \
+            "$modest/Sensor.cpp" "$modest/Actuator.cpp" \
+            -o build/temperature_sensor_test
+          build/temperature_sensor_test
+
+      - name: Compile the ESP32 firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+          sketch="$RUNNER_TEMP/ichu-build/sketch"
+          mkdir -p "$sketch" build
+          cp ./sketch.ino "$sketch/"
+          arduino-cli --config-file "$RUNNER_TEMP/ichu-arduino.yaml" compile \
+            --fqbn esp32:esp32:esp32 --warnings all --output-dir build "$sketch"
+          test -s build/sketch.ino.bin
+          test -s build/sketch.ino.elf
+
+      - name: Report skipped simulation
+        if: env.WOKWI_CLI_TOKEN == ''
+        shell: bash
+        run: |
+          echo 'Wokwi simulation was not executed: WOKWI_CLI_TOKEN is not configured.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install the pinned Wokwi CLI
+        if: env.WOKWI_CLI_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            https://github.com/wokwi/wokwi-cli/releases/download/v0.29.1/wokwi-cli-linuxstatic-x64 \
+            --output "$RUNNER_TEMP/wokwi-cli"
+          printf '%s  %s\n' '3c9d6da007d008a3822ab468318037285440055132c59fd659d7306e40f14258' \
+            "$RUNNER_TEMP/wokwi-cli" | sha256sum --check -
+          chmod +x "$RUNNER_TEMP/wokwi-cli"
+          "$RUNNER_TEMP/wokwi-cli" --version
+          "$RUNNER_TEMP/wokwi-cli" lint --warnings-as-errors .
+
+      - name: Run the controller scenarios
+        if: env.WOKWI_CLI_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          for scenario in tests/startup.test.yaml tests/startup-heating.test.yaml \
+            tests/hysteresis-relay.test.yaml tests/overtemperature.test.yaml; do
+            name="$(basename "$scenario" .test.yaml)"
+            "$RUNNER_TEMP/wokwi-cli" . --scenario "$scenario" \
+              --timeout 120000 --timeout-exit-code 1 \
+              --serial-log-file "build/$name.serial.log"
+          done
